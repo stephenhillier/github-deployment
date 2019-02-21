@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"strings"
 
 	"github.com/google/go-github/github"
@@ -15,12 +16,18 @@ import (
 // PullRequestEvent is the payload sent by GitHub
 // when a pull request event occurs (opened, closed, labeled, etc.)
 type PullRequestEvent struct {
-	Repository struct {
-		FullName string `json:"full_name"`
-	} `json:"repository"`
-	PullRequest struct {
-		Number int `json:"number"`
-	} `json:"pull_request"`
+	Repository  GitHubRepository  `json:"repository"`
+	PullRequest GitHubPullRequest `json:"pull_request"`
+}
+
+// GitHubRepository represents a GitHub repository in a github API payload
+type GitHubRepository struct {
+	FullName string `json:"full_name"`
+}
+
+// GitHubPullRequest is a GitHub pull request (in the form of a github API pull_request object)
+type GitHubPullRequest struct {
+	Number int `json:"number"`
 }
 
 // DeploymentResult contains the results of deployment requests
@@ -29,6 +36,29 @@ type PullRequestEvent struct {
 type DeploymentResult struct {
 	Deployment int64  `json:"deployment"`
 	State      string `json:"state"`
+}
+
+// RepositoriesService is a set methods that interact with GitHub repositories
+type RepositoriesService interface {
+	CreateDeployment(context.Context, string, string, *github.DeploymentRequest) (*github.Deployment, *github.Response, error)
+	CreateDeploymentStatus(context.Context, string, string, int64, *github.DeploymentStatusRequest) (*github.DeploymentStatus, *github.Response, error)
+}
+
+// GitHubClient is a client that provides RepositoriesService methods
+type GitHubClient struct {
+	Repositories RepositoriesService
+}
+
+// NewGitHubClient wraps github.NewClient and returns a GitHubClient.
+// this is used to make it easier to mock go-github.  Running the program
+// invokes this method to create a client while the tests can provide a mock client.
+// based on mocking method discussed at https://github.com/google/go-github/issues/113
+func NewGitHubClient(httpClient *http.Client) GitHubClient {
+	client := github.NewClient(httpClient)
+
+	return GitHubClient{
+		Repositories: client.Repositories,
+	}
 }
 
 func main() {
@@ -59,7 +89,7 @@ func main() {
 
 	// set up the client to access GitHub, using the token
 	httpClient := oauth2.NewClient(context.Background(), oauthToken)
-	client := github.NewClient(httpClient)
+	client := NewGitHubClient(httpClient)
 
 	// set up the event using the payload that comes from Brigade pull_request event
 	var event PullRequestEvent
@@ -102,7 +132,7 @@ func main() {
 
 // createDeploymentStatus takes a client and a GitHub Deployment and updates its status and environment URL.
 // https://developer.github.com/v3/repos/deployments/
-func createDeploymentStatus(client *github.Client, deployment int64, event PullRequestEvent, envName string, status string, URL string) (*github.DeploymentStatus, error) {
+func createDeploymentStatus(client GitHubClient, deployment int64, event PullRequestEvent, envName string, status string, URL string) (*github.DeploymentStatus, error) {
 	repoName := strings.Split(event.Repository.FullName, "/")
 	owner, repo := repoName[0], repoName[1]
 
@@ -125,10 +155,10 @@ func createDeploymentStatus(client *github.Client, deployment int64, event PullR
 	return deploymentStatus, nil
 }
 
-// createDeployment sends a request to the GitHub Deployment API to create
-// a new deployment for a pull request
+// createDeployment sends a request to the GitHub Deployment API to create a new deployment for the repository.
+// It will show up in the "environments" tab as well as on the referenced pull request page.
 // https://developer.github.com/v3/repos/deployments/
-func createDeployment(client *github.Client, event PullRequestEvent, envName string) (*github.Deployment, error) {
+func createDeployment(client GitHubClient, event PullRequestEvent, envName string) (*github.Deployment, error) {
 	repoName := strings.Split(event.Repository.FullName, "/")
 	owner, repo := repoName[0], repoName[1]
 	ref := fmt.Sprintf("pull/%v/head", event.PullRequest.Number)
