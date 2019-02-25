@@ -1,9 +1,10 @@
-FROM golang:1.11-stretch AS builder
-WORKDIR /go/src/github.com/stephenhillier/github-deployment
-ADD . .
-RUN go test && go build
+FROM golang:1.11-alpine3.9
+LABEL "name"="github-deployment"
+LABEL "version"="0.1.0"
 
-FROM debian:stretch
-RUN mkdir /app
-COPY --from=builder /go/src/github.com/stephenhillier/github-deployment/github-deployment /app/
-ENTRYPOINT [ "/app/github-deployment" ]
+RUN mkdir -p /go/src/github-deployment/
+COPY . /go/src/github-deployment
+
+RUN go install -v /go/src/github-deployment/
+
+ENTRYPOINT ["/go/src/github-deployment/entrypoint.sh"]
