@@ -40,3 +40,20 @@ notify.run()
 ```
 
 You can omit `DEPLOYMENT_ID` on the first run, and a new deployment will be generated and returned. To update that deployment (e.g. `pending` -> `success`), run a second job but pass in the deployment id.
+
+## GitHub Actions usage
+
+Add a step to your workflow like this:
+
+```hcl
+action "GitHub Deployment" {
+    uses = "stephenhillier/github-deployment@master"
+    args = [
+        "-environment_name", "staging",
+        "-deployment_state", "success" 
+    ]
+}
+```
+
+Other parameters can be passed by setting environment variables for the stage.
+Note: GitHub Actions support is experimental. The `event_payload` parameter may be a blocker. Feel free to create an issue/PR to report your experience.
